@@ -1,0 +1,313 @@
+function BasicPsychtoolobox
+
+% Clear the workspace and the screen
+sca;
+close all;
+clearvars;
+
+% If you are recording with EEG, enter 1
+EEG = 0;
+
+% Initializing psychtoolbox
+[screens,screenNumber,grey,white,black,window] = initPsychtoolbox();
+
+% Initializing EEG
+if EEG
+    [BIOSEMI,BIO_LPT_ADDRESS] = initBIO_h();
+end
+
+
+% Setting the triggers for EEG
+stimOnsetTrigger = 100;
+fixationOnsetTrigger = 150;
+
+
+% Loading a blank image of the same dimension as the stimuli of the
+% experiment
+theImageLocation = 'C:\Users\alexander.lepauvre\Pictures\diodeTest.png';
+theImage = imread(theImageLocation);
+
+% Make the image into a texture
+imageTexture = Screen('MakeTexture', window, theImage);
+
+% Displazing the instructions, telling the experimenter what they should do
+% to measure the delays
+displayInstructions(window)
+
+
+% If you are recording with the EEG, send a trigger informing of the start
+% of the experiment
+if EEG
+    sendTrig(1,BIOSEMI,BIO_LPT_ADDRESS);
+end
+
+% This is the presentation loop. 100 iterations. For each iteration a white
+% picture will be presented for 1.5 second, then only the fixation will be
+% presented for 0.5sec. 
+for i = 1 : 10
+    % Draw the image to the screen, unless otherwise specified PTB will draw
+    % the texture full size in the center of the screen. We first draw the
+    % image in its correct orientation.
+    Screen('DrawTexture', window, imageTexture, [], [], 0);
+    drawFixation(window)
+    % Flip to the screen
+    Screen('Flip', window);
+    if EEG
+        sendTrig('100',biosemi,LPT_address);
+    end
+    
+    % Getting the time of the begining of the trial. Trial begins as soon
+    % as the picture is presented
+    beginTrial = GetSecs;
+    % The time elapsed correspond to the time we are at, minus the time we
+    % started measuring
+    elapsedTime = GetSecs - beginTrial;
+    
+    % As long as the elapsed time is inferior to 2 seconds, the trial
+    % continues
+    while elapsedTime < 2
+        
+        % Once 1.5 msec have passed, diplay the fixation only
+        if elapsedTime>= 1.5
+            % Fill the screen with the grey color
+            Screen('FillRect', window,grey);
+            % Draw the fixation
+            drawFixation(window)
+            % Flip to the screen
+            Screen('Flip', window);
+            
+            % If you are using EEG, send the trigger for the end of
+            % stimulus presentation
+            if EEG
+                sendTrig('150',biosemi,LPT_address);
+            end
+        end
+        % Actualize the elapsed Time counter
+        elapsedTime = GetSecs - beginTrial;
+    end    
+end
+% Sending the end trigger to the EEG
+if EEG 
+    sendTrig(TRG_MINIBLOCK_ENDED,BIOSEMI,BIO_LPT_ADDRESS); 
+    saveTrigToHD(); 
+end
+
+% Now we are done with the trials, we can save teh EEG triggers to the hard
+% drive and terminate the EEG recording
+if EEG 
+    
+end
+
+% Clear the screen.
+safeExit(EEG,BIOSEMI,BIO_LPT_ADDRESS)
+% Ideally here, I would have something loading the EEG data and analyze
+% them directly to get the delays. 
+end
+
+
+function [screens,screenNumber,grey,white,black,window] = initPsychtoolbox()
+
+% Here we call some default settings for setting up Psychtoolbox
+PsychDefaultSetup(2);
+
+% Setting the sync tests: SkipSyncTests set to 0 because we want the sync
+% tests to be performed
+Screen('Preference', 'SkipSyncTests', 0);
+
+% Setting the level of visual debug. In other word, this lets you decide
+% how much of the warnings sent by Psychtoolbox you want to see. Set to 4,
+% the most thorough: we want everything psychtoolbox sends to be sent. 
+Screen('Preference', 'VisualDebugLevel', 4);
+
+% Get the screen numbers. This gives us a number for each of the screens
+% attached to our computer.
+screens = Screen('Screens');
+
+% To draw we select the maximum of these numbers. So in a situation where we
+% have two screens attached to our monitor we will draw to the external
+% screen.
+screenNumber = max(screens);
+
+% Define black and white (white will be 1 and black 0). This is because
+% in general luminace values are defined between 0 and 1 with 255 steps in
+% between. All values in Psychtoolbox are defined between 0 and 1
+white = WhiteIndex(screenNumber);
+black = BlackIndex(screenNumber);
+% But here, we are setting the gray to be fitting our experiment:
+grey  =   [0.5 0.5 0.5];
+
+
+% Open an on screen window using PsychImaging and color it grey.
+[window, windowRect] = PsychImaging('OpenWindow', screenNumber, grey);
+% Getting the dimensions of the window
+ScreenWidth     =  windowRect(3);
+ScreenHeight    =  windowRect(4);
+center          =  [ScreenWidth/2; ScreenHeight/2];
+% Getting the frame rate
+hz = Screen('NominalFrameRate', window);
+disp(hz);
+refRate = hz.^(-1);
+
+% Setting the text preferences: text renderer 1 is for HQ, TextEncodingLocale UTF-8
+Screen('Preference', 'TextRenderer', 1); 
+Screen('Preference','TextEncodingLocale','UTF-8');
+
+% this enables us to use the alpha transparency
+Screen('BlendFunction', window, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA', [grey 128]);
+
+% Setting the priority level to maximal for the screen on which we will
+% present
+priorityLevel=MaxPriority(window);
+Priority(priorityLevel);
+
+%% Text parameters
+fontType = 'David';
+Screen('TextFont',window, fontType);
+Screen('TextStyle', window, 0);
+%Screen('TextSize', window, round(fontSize*screenScaler));
+
+%% PRELIMINTY PREPATATION
+% check for Opengl compatibility, abort otherwise
+AssertOpenGL;
+
+% Do dummy calls to GetSecs, WaitSecs, KbCheck
+KbCheck;
+WaitSecs(0.1);
+GetSecs;
+
+end
+
+% Setting the fixation
+function [ ] = drawFixation(w)
+
+Screen('TextSize', w);
+FIXATION_COLOR = [0 0 0];
+
+DrawFormattedText(w, double('o'), 'center', 'center', FIXATION_COLOR);
+
+Screen('TextSize', w);
+
+end
+
+
+function displayInstructions(w)
+
+Screen('TextSize', w);
+FIXATION_COLOR = [0 0 0];
+
+DrawFormattedText(w, double('You are about to start. Make sure the diode is sticked to the screen the right way'), 'center', 'center', FIXATION_COLOR);
+
+Screen('TextSize', w);
+
+Screen('Flip', w);
+KbWait;
+end
+
+%% EEG System
+
+
+function [BIOSEMI, BIO_LPT_ADDRESS] = initBIO_h()
+
+global trigMatName triggers triggsCounter triggsStart
+
+prf1 = sprintf('%s', date);
+trigMatName  = sprintf('%s%c%s%c%s_S%d_%s_triggers.mat',pwd,filesep,'data',filesep,'DiodeTest', prf1);
+
+% Doing some preallocation for the triggers
+TRIGGER_ARRAY_SIZE = 1000;
+% The triggers matrix will contain the different triggers onsets
+triggers = nan(TRIGGER_ARRAY_SIZE,2);
+% Setting a counter for the triggers
+triggsCounter= 0;
+% Finding out the moment where we start to record to get the time of the
+% other triggers relative to the beining
+triggsStart = GetSecs;
+
+% Starting the hardware
+try
+    [BIOSEMI, BIO_LPT_ADDRESS]=init_bio;
+catch e
+    warning('BioSemi connection initiation failed! Triggers will not be sent!');
+    if ~DEBUG throw(e); end
+end
+
+end
+%INIT_BIO
+% EEG trigger function trigger hardware intilization
+function [ biosemi,LPT_address ] = init_bio()
+
+
+% config_io;
+% RB_address = hex2dec('D010');
+% LPT_address = hex2dec('0378');
+LPT_address = hex2dec('c010');
+
+biosemi=io64;
+status=io64(biosemi);
+if status
+    disp ('fail')
+    biosemi = [];
+end
+
+end
+
+% Sending the triggers: this function is sending the triggers
+% Input: BIOSEMI and BIO_LPT_ADDRESS are required fpr the program to know
+% where  to send the triggers, and the trigger code is the code of the
+% current trigger
+function [] = sendTrig(trigCode,BIOSEMI,BIO_LPT_ADDRESS)
+
+% Setting the global variables: triggsCounter counts how many triggers were
+% sent in total, triggsStart gets when the trigger was sent
+global triggsCounter triggsStart triggers
+try
+    % This command is sending the  trigger through the parallel port
+    io64(BIOSEMI,BIO_LPT_ADDRESS,trigCode);
+    % Setting the triggers counter
+    triggsCounter = triggsCounter + 1;
+    % Saving the time of the trigger in the triggers matrix
+    triggers(triggsCounter,2) = GetSecs - triggsStart;
+    % Waiting a little and then resetting the trigger (setting it back to
+    % 0) through the parallel port
+    WaitSecs(0.001);
+    io64(BIOSEMI,BIO_LPT_ADDRESS,0);
+    WaitSecs(0.001);
+    % Adding the trigger code to the triggers matrix.
+    triggers(triggsCounter,1) = trigCode;
+catch %e
+    warning ('Trigger not sent correctly!');
+end
+end
+
+% This function saves the triggers to the hard drive
+function saveTrigToHD()
+
+global trigMatName triggers
+
+try
+    save(trigMatName,'triggers');
+catch
+    try
+        save(trigMatName,'triggers');
+    catch
+    end
+end
+end
+
+
+%% Safe exit
+% This function closes everything that eneds to be closed and so on
+function [] = safeExit(EEG,BIOSEMI,BIO_LPT_ADDRESS)
+
+Priority(0);
+sca;
+ShowCursor;
+ListenChar(0);
+try
+    if EEG 
+        saveTrigToHD(); 
+        sendTrig(255,BIOSEMI,BIO_LPT_ADDRESS);
+    end
+catch
+end
+end
